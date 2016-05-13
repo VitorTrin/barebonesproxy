@@ -7,7 +7,7 @@
 #define LINE_LEN 512
 #define HEADER_LEN 1024
 #define BUFFER_SIZE 1024
-#define NTHREADS 100
+#define NTHREADS 100000
 
 /* Structure of arguments to pass to client thread */
 struct TArgs {
@@ -35,7 +35,6 @@ void PrintHttpPacket(HttpPacket* packet) {
 	if(packet->bodyData && packet->bodySize > 0) {
 		printf("%s", packet->bodyData);
 	}
-	// TODO(erick): Print body
 }
 
 int ReadRequestFromSocket(HttpPacket* request, TSocket socket) {
@@ -97,7 +96,7 @@ int ReadRequestFromSocket(HttpPacket* request, TSocket socket) {
 }
 
 typedef struct {
-	char protocol[7];
+	char protocol[8];
 	char host[128];
 	char file[256];
 } Url;
@@ -140,15 +139,15 @@ void WriteHttpRequestToSocket(HttpPacket* packet, Url* url, TSocket socket) {
 	sprintf(buffer, "Host: %s\r\n", url->host);
 	WriteN(socket, buffer, strlen(buffer));
 
-	// NOTE(erick): Send packet header
-	WriteN(socket, packet->header, strlen(packet->header));
+	// // NOTE(erick): Send packet header
+	// WriteN(socket, packet->header, strlen(packet->header));
 
 	// NOTE(erick): Finishes the request
 	sprintf(buffer, "\r\n");
 	WriteN(socket, buffer, strlen(buffer));
 }
 
-int ReadResponseFromServerSocket(TSocket hostSocket, HttpPacket* response) {
+int ReadResponseHeadFromServerSocket(TSocket hostSocket, HttpPacket* response) {
 	if(ReadLine(hostSocket, response->firstLine, LINE_LEN) <= 0) {
 		WriteError("ReadRequestFromSocket: Could not establish connection with client");
 		return 0;
@@ -158,15 +157,16 @@ int ReadResponseFromServerSocket(TSocket hostSocket, HttpPacket* response) {
 	int headerCharsLeft = HEADER_LEN;
 	char buffer[LINE_LEN];
 	char* write_ptr = response->header;
+	response->bodySize = -2;
 	while(reading) {
 		int readResult = ReadLine(hostSocket, buffer, LINE_LEN);
 
 		if(readResult < 0) {
-			WriteError("ReadResponseFromServerSocket: Communication with server has failed");
+			WriteError("ReadResponseHeadFromServerSocket: Communication with server has failed");
 			return 0;
 		}
 		if(readResult == 0) {
-			WriteError("ReadResponseFromServerSocket: HTTP packet ended abruptly");
+			WriteError("ReadResponseHeadFromServerSocket: HTTP packet ended abruptly");
 			return 0;
 		}
 
@@ -180,18 +180,154 @@ int ReadResponseFromServerSocket(TSocket hostSocket, HttpPacket* response) {
 #endif
 
 		if(headerCharsLeft < 0) {
-			WriteError("ReadResponseFromServerSocket: The 'request' header size was exceeded");
+			WriteError("ReadResponseHeadFromServerSocket: The 'request' header size was exceeded");
 			return 0;
 		}
 
 		sprintf(write_ptr, "%s\r\n", buffer);
 		write_ptr += headerLineLen;
 
-		// TODO(erick): Check whether this line contains a
-		// 'Content-Length:' parameter and set the response
-		// 'bodySize' to its value.
+		if(strstr(buffer, "Content-Length: ") == buffer) {
+			sscanf(buffer, "Content-Length: %d", &(response->bodySize));
+		}
+
+		if(strcasecmp(buffer, "Transfer-Encoding: Chunked") == 0) {
+			response->bodySize = -1;
+		}
+
 		if(strlen(buffer) == 0) {
 			reading = 0;
+		}
+	}
+
+	return 1;
+}
+
+int ReadResponseBodyWithLengthFromServerSocket(TSocket hostSocket, HttpPacket *response) {
+
+	response->bodyData = (char*) calloc(response->bodySize, sizeof(char));
+
+	int bodyCharsLeft = response->bodySize;
+	char buffer[LINE_LEN];
+	char* write_ptr = response->bodyData;
+	while(bodyCharsLeft > 0) {
+		int readResult = ReadLine(hostSocket, buffer, LINE_LEN);
+
+		if(readResult < 0) {
+			WriteError("ReadResponseBodyWithLengthFromServerSocket: Communication with server has failed");
+			return 0;
+		}
+		if(readResult == 0) {
+			WriteError("ReadResponseBodyWithLengthFromServerSocket: HTTP packet ended abruptly");
+			return 0;
+		}
+
+		int bodyLineLen = strlen(buffer);
+		bodyCharsLeft -= bodyLineLen;
+
+#if DEBUG_BUILD
+		printf("Response line: %s", buffer);
+#endif
+
+		if(bodyCharsLeft < 0) {
+			WriteError("ReadResponseBodyWithLengthFromServerSocket: The 'request' body size was exceeded");
+			return 0;
+		}
+
+		sprintf(write_ptr, "%s", buffer);
+		write_ptr += bodyLineLen;
+	}
+
+	return 1;
+}
+
+#define KILO (1024)
+#define MEGA (KILO * KILO)
+
+typedef enum {
+	ReadChunkSize,
+	ReadChunkData
+} ReadChunkState;
+
+int ReadResponseBodyChunkedFromServerSocket(TSocket hostSocket, HttpPacket *response) {
+	int bufferSize = 5 * MEGA;
+	char* buffer = (char*) calloc(bufferSize, sizeof(char));
+	int charsReadToBuffer = 0;
+
+	ReadChunkState readState = ReadChunkSize;
+	int currentChunkSize;
+	int currentChunkRead;
+
+	int reading = 1;
+	while(reading) {
+		char* write_ptr = buffer + charsReadToBuffer;
+		int charsRead = ReadLine(hostSocket, write_ptr, bufferSize - charsReadToBuffer);
+
+		if(charsRead < 0) {
+			WriteError("ReadResponseBodyChunkedFromServerSocket: Communication with server has failed");
+			return 0;
+		}
+		if(charsRead == 0) {
+			WriteError("ReadResponseBodyChunkedFromServerSocket: HTTP packet ended abruptly");
+			return 0;
+		}
+
+		charsReadToBuffer += charsRead;
+
+#if DEBUG_BUILD
+		printf("Body line: %s", write_ptr);
+#endif
+
+		switch(readState) {
+			case ReadChunkSize :
+				sscanf(write_ptr, "%x", &currentChunkSize);
+				currentChunkRead = 0;
+				readState = ReadChunkData;
+			break;
+			case ReadChunkData :
+				currentChunkRead += charsRead;
+				if(currentChunkRead >= currentChunkSize) {
+					readState = ReadChunkSize;
+				}
+				if(currentChunkSize == 0) {
+					reading = 0;
+				}
+			break;
+		}
+
+		// NOTE(erick): We reallocate when the remaining space is less than 1 KiB
+		if(bufferSize - charsReadToBuffer < 1 * KILO) {
+			bufferSize *= 2;
+			buffer = (char*) realloc(buffer, bufferSize);
+		}
+	}
+
+	response->bodyData = buffer;
+	response->bodySize = charsReadToBuffer;
+
+	return 1;
+}
+
+int WriteHttpResponseToSocket(HttpPacket *response, TSocket socket) {
+	char buffer[LINE_LEN + 2];
+	// FIRST LINE
+	sprintf(buffer, "%s", response->firstLine);
+	if(WriteN(socket, buffer, strlen(buffer)) <= 0) {
+		WriteError("WriteHttpResponseToSocket: Connection with client closed");
+		return 0;
+	}
+
+	// HEADER
+	if(WriteN(socket, response->header, strlen(response->header)) <= 0) {
+		WriteError("WriteHttpResponseToSocket: Connection with client closed");
+		return 0;
+	}
+
+	// BODY
+	if(response->bodyData && response->bodySize > 0) {
+		if(WriteN(socket, response->bodyData, response->bodySize) <= 0) {
+			WriteError("WriteHttpResponseToSocket: Connection with client closed");
+			return 0;
 		}
 	}
 
@@ -221,19 +357,38 @@ void * HandleRequest(void *args) {
 		EndSocketRequest(clientSocket);
 	}
 
+	if(strlen(requestedUrl.host) == 0) {
+		WriteError("Invalid request");
+		EndSocketRequest(clientSocket);
+	}
+
 	// NOTE(erick): RedirectGetRequest
 	TSocket hostSocket = ConnectToHostByName(requestedUrl.host);
 	WriteHttpRequestToSocket(&request, &requestedUrl, hostSocket);
 
 
-	if(!ReadResponseFromServerSocket(hostSocket, &response)) {
+	if(!ReadResponseHeadFromServerSocket(hostSocket, &response)) {
 		EndSocketRequest(clientSocket);
+	}
+
+	if(response.bodySize > 0) {
+		ReadResponseBodyWithLengthFromServerSocket(hostSocket, &response);
+	}
+	else if(response.bodySize == -1) {
+		ReadResponseBodyChunkedFromServerSocket(hostSocket, &response);
+	}
+	else {
+		printf("There is no packet bode\n");
 	}
 
 #if DEBUG_BUILD
 	printf("Response Packet:\n");
 	PrintHttpPacket(&response);
 #endif
+
+	WriteHttpResponseToSocket(&response, clientSocket);
+
+	printf("Finish\n");
 
 	EndSocketRequest(clientSocket);
 }
@@ -254,17 +409,10 @@ int main(int argc, char *argv[]) {
 
 	printf("Server ready!\n");
 	/* Run forever */
-	for (;;) {
-		/* Initialize the file descriptor set */
-		FD_ZERO(&set);
-		/* Include stdin into the file descriptor set */
-		FD_SET(STDIN_FILENO, &set);
-		/* Include srvSock into the file descriptor set */
-		FD_SET(srvSock, &set);
+	while(1) {
+		ret = prepareAndEvokeSelect(&set, srvSock);
 
-		/* Select returns 1 if input available, -1 if error */
-		ret = select (FD_SETSIZE, &set, NULL, NULL, NULL);
-		if (ret<0) {
+		if (ret == 0) {
 			 WriteError("select() failed");
 			 break;
 		}
