@@ -1,19 +1,8 @@
 // mysocket.c
 // October, 2006
-// Prof.: Silvana Rossetto 
+// Prof.: Silvana Rossetto
 
 #include "mysocket.h"
-
-/* Error handling */
-void ExitWithError(char *errorMsg) {
-  printf("-- EXIT: %s\n", errorMsg);
-  exit(1);
-}
-
-/* Write an error message */
-void WriteError(char *errorMsg) {
-  printf("-- ERROR: %s\n", errorMsg);
-}
 
 /* Write debug */
 void dbg(unsigned short type, char *msg, char *str, int value) {
@@ -54,7 +43,7 @@ TSocket CreateServer(unsigned short port) {
 /* Connection accepting */
 TSocket AcceptConnection(TSocket srvSock) {
   TSocket cliSock;                 /* socket descriptor for client */
-  struct sockaddr_in cliAddr;      /* client address */   
+  struct sockaddr_in cliAddr;      /* client address */
   unsigned int cliLen;             /* length of client address data structure */
 
   /* Set the size of the in-out parameter */
@@ -68,13 +57,41 @@ TSocket AcceptConnection(TSocket srvSock) {
   return cliSock;
 }
 
+TSocket ConnectToHostByName(char *name) {
+  TSocket sock;                    /* socket to create */
+
+  struct sockaddr_in client = {0};
+  struct hostent *he;
+
+  if ((sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
+    { ExitWithError("socket() failed"); }
+
+  he = gethostbyname(name);
+
+  if(!he->h_addr)
+  { ExitWithError("gethostbyname() failed"); }
+
+  char* ip = inet_ntoa(*(struct in_addr*)he->h_addr);
+
+  printf("Host IP: %s\n", ip);
+
+  client.sin_family = AF_INET;
+  client.sin_port = htons(80);
+  client.sin_addr.s_addr = inet_addr(ip);
+
+  if (connect(sock, (struct sockaddr *) &client, sizeof(client)) < 0)
+      { ExitWithError("connect() failed"); }
+
+  return sock;
+}
+
 /* Connect to a server */
 TSocket ConnectToServer(char *servIP, unsigned short servPort) {
   TSocket sock;                    /* socket to create */
   struct sockaddr_in addr;         /* local address */
 
   /* Create a TCP local endpoint */
-  if ((sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
+  if ((sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
    { ExitWithError("socket() failed"); }
 
   /* Setup the address of server */
@@ -122,7 +139,7 @@ int ReadN(TSocket sock, char *ptr, int numBytes) {
 /* Read a line from a stream socket */
 int ReadLine(TSocket sock, char *ptr, int maxLen) {
   int n, rc; char c;
-  
+
   for (n = 1; n < maxLen; n++) {
     if ( (rc = read(sock, &c, 1)) == 1) {
       *ptr++ = c;

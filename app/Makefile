@@ -4,13 +4,10 @@
 
 VERSION = 1.0
 
-#SERVER = server_thread.c 
-SERVER = serverchat.c
+#SERVER = server_thread.c
+SERVER = proxy_server.c
 
-#CLIENT = client.c
-CLIENT = cliList.c
-SRV = srv
-CLI = cli
+SRV = proxy
 
 #-------------------------------------------------------------
 # the rest of the file should not change
@@ -20,24 +17,26 @@ OBJ = ../obj
 BIN = ../bin
 
 CC = gcc -Wall
-CFLAGS = -I$(INC) 
-LFLAGS = -lpthread 
+CFLAGS = -I$(INC) -DDEBUG_BUILD
+LFLAGS = -lpthread
 RM = rm
 
 # make all
-all:  $(OBJ)/mysocket.o $(BIN)/$(SRV) $(BIN)/$(CLI) 
+all:  $(OBJ)/mysocket.o $(BIN)/$(SRV) $(BIN)/$(CLI)
+
+$(OBJ)/utils.o: $(SRC)/utils.c $(INC)/utils.h
+	$(CC) -c $(CFLAGS) -o $@ $(SRC)/utils.c
+
 
 $(OBJ)/mysocket.o: $(SRC)/mysocket.c $(INC)/mysocket.h
 	$(CC) -c $(CFLAGS) -o $@ $(SRC)/mysocket.c
 
-$(BIN)/$(SRV): $(OBJ)/mysocket.o $(SERVER)
-	$(CC) $(CFLAGS) -o $@ $(OBJ)/mysocket.o $(SERVER) $(LFLAGS) 
+$(BIN)/$(SRV): $(OBJ)/mysocket.o $(OBJ)/utils.o $(SERVER)
+	$(CC) $(CFLAGS) -o $@ $(OBJ)/mysocket.o $(OBJ)/utils.o $(SERVER) $(LFLAGS)
 
-$(BIN)/$(CLI): $(OBJ)/mysocket.o $(CLIENT)
-	$(CC) $(CFLAGS) -o $@ $(OBJ)/mysocket.o $(CLIENT)
 # version
-version: 
-	@echo $(VERSION) "(Draft Version!)" 
+version:
+	@echo $(VERSION) "(Draft Version!)"
 # clean
 clean:
 	$(RM) -rf $(OBJ)/*.o  $(BIN)/*

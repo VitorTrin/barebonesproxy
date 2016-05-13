@@ -1,6 +1,6 @@
 // mysocket.h
 // October, 2006
-// Prof.: Silvana Rossetto 
+// Prof.: Silvana Rossetto
 
 #include <stdio.h>      /*  printf(), perror() and fprintf() */
 #include <sys/socket.h> /*  socket(), bind(), and connect() */
@@ -28,10 +28,12 @@ void WriteError(char *errorMsg);
 void dbg(unsigned short type, char *msg, char *str, int value);
 
 /* Create a server socket */
-TSocket CreateServer(unsigned short port); 
+TSocket CreateServer(unsigned short port);
 
 /* Accept connection */
 TSocket AcceptConnection(TSocket servSock);
+
+TSocket ConnectToHostByName(char *name);
 
 /* Connect to a server */
 TSocket ConnectToServer(char *servIP, unsigned short servPort);
@@ -40,7 +42,7 @@ TSocket ConnectToServer(char *servIP, unsigned short servPort);
 int WriteN(TSocket sock, char *ptr, int numBytes);
 
 /* Read "n" bytes from a stream socket */
-int ReadN(TSocket sock, char *ptr, int numBytes); 
+int ReadN(TSocket sock, char *ptr, int numBytes);
 
 /* Read a line from a socket */
 int ReadLine(TSocket sock, char *ptr, int maxLen);
@@ -49,4 +51,4 @@ int ReadLine(TSocket sock, char *ptr, int maxLen);
 int ReadUntil(char *ptr, char objective, char* read);
 
 /* Get local name */
-char *GetLocalName();  
+char *GetLocalName();
