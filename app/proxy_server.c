@@ -1,5 +1,3 @@
-// A multithread echo server
-
 #include "mysocket.h"
 #include "utils.h"
 #include <pthread.h>
@@ -152,6 +150,8 @@ int ReadResponseHeadFromServerSocket(TSocket hostSocket, HttpPacket* response) {
 		WriteError("ReadRequestFromSocket: Could not establish connection with client");
 		return 0;
 	}
+
+	TrimMessage(response->firstLine);
 
 	int reading = 1;
 	int headerCharsLeft = HEADER_LEN;
@@ -311,7 +311,7 @@ int ReadResponseBodyChunkedFromServerSocket(TSocket hostSocket, HttpPacket *resp
 int WriteHttpResponseToSocket(HttpPacket *response, TSocket socket) {
 	char buffer[LINE_LEN + 2];
 	// FIRST LINE
-	sprintf(buffer, "%s", response->firstLine);
+	sprintf(buffer, "%s\r\n", response->firstLine);
 	if(WriteN(socket, buffer, strlen(buffer)) <= 0) {
 		WriteError("WriteHttpResponseToSocket: Connection with client closed");
 		return 0;
