@@ -57,15 +57,9 @@ TSocket AcceptConnection(TSocket srvSock) {
   return cliSock;
 }
 
-TSocket ConnectToHostByName(char *name) {
-  TSocket sock;                    /* socket to create */
-
-  struct sockaddr_in client = {0};
+TSocket ConnectToHostByName(char *name, unsigned short hostPort) {
+  TSocket result;
   struct hostent *he;
-
-  if ((sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
-    { ExitWithError("socket() failed"); }
-
   he = gethostbyname(name);
 
   if(!he->h_addr)
@@ -73,16 +67,12 @@ TSocket ConnectToHostByName(char *name) {
 
   char* ip = inet_ntoa(*(struct in_addr*)he->h_addr);
 
+#if DEBUG_BUILD
   printf("Host IP: %s\n", ip);
+#endif
 
-  client.sin_family = AF_INET;
-  client.sin_port = htons(80);
-  client.sin_addr.s_addr = inet_addr(ip);
-
-  if (connect(sock, (struct sockaddr *) &client, sizeof(client)) < 0)
-      { ExitWithError("connect() failed"); }
-
-  return sock;
+  result = ConnectToServer(ip, hostPort);
+  return result;
 }
 
 /* Connect to a server */

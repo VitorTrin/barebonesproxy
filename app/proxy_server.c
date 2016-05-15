@@ -363,11 +363,12 @@ void * HandleRequest(void *args) {
 	}
 
 	// NOTE(erick): RedirectGetRequest
-	TSocket hostSocket = ConnectToHostByName(requestedUrl.host);
+	TSocket hostSocket = ConnectToHostByName(requestedUrl.host, 80);
 	WriteHttpRequestToSocket(&request, &requestedUrl, hostSocket);
 
 
 	if(!ReadResponseHeadFromServerSocket(hostSocket, &response)) {
+		close(hostSocket);
 		EndSocketRequest(clientSocket);
 	}
 
@@ -377,9 +378,11 @@ void * HandleRequest(void *args) {
 	else if(response.bodySize == -1) {
 		ReadResponseBodyChunkedFromServerSocket(hostSocket, &response);
 	}
+#if DEBUG_BUILD
 	else {
-		printf("There is no packet bode\n");
+		printf("There is no packet body\n");
 	}
+#endif
 
 #if DEBUG_BUILD
 	printf("Response Packet:\n");
@@ -388,8 +391,14 @@ void * HandleRequest(void *args) {
 
 	WriteHttpResponseToSocket(&response, clientSocket);
 
+	if(response.bodyData && response.bodySize > 0) {
+		free(response.bodyData);
+		response.bodyData = NULL;
+	}
+
 	printf("Finish\n");
 
+	close(hostSocket);
 	EndSocketRequest(clientSocket);
 }
 

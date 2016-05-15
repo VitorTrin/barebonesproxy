@@ -33,7 +33,7 @@ TSocket CreateServer(unsigned short port);
 /* Accept connection */
 TSocket AcceptConnection(TSocket servSock);
 
-TSocket ConnectToHostByName(char *name);
+TSocket ConnectToHostByName(char *name, unsigned short hostPort);
 
 /* Connect to a server */
 TSocket ConnectToServer(char *servIP, unsigned short servPort);
